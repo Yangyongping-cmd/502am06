@@ -1,51 +1,34 @@
-package com.city.emergency.scheduling.solver;
+package com.city.emergency.scheduling.compute.domain;
 
-import com.city.emergency.scheduling.domain.Assignment;
-import com.city.emergency.scheduling.domain.Order;
-import com.city.emergency.scheduling.domain.Resource;
-import com.city.emergency.scheduling.domain.SchedulingSolution;
 import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
 import org.optaplanner.core.api.score.calculator.EasyScoreCalculator;
-import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@Component
-public class SchedulingScoreCalculator implements EasyScoreCalculator<SchedulingSolution, HardSoftScore> {
+public class SchedulingScoreCalculator implements EasyScoreCalculator<SchedulingProblem, HardSoftScore> {
 
     private static final double EARTH_RADIUS = 6371.0;
     
     private static final int HARD_PENALTY_UNASSIGNED = 10000;
     private static final int HARD_PENALTY_SKILL_MISMATCH = 5000;
     private static final int HARD_PENALTY_STATUS_UNAVAILABLE = 8000;
-    private static final int HARD_PENALTY_TIME_EXCEED = 3000;
     private static final int HARD_PENALTY_CAPACITY_EXCEED = 4000;
 
     private static final int SOFT_PENALTY_DISTANCE = 10;
     private static final int SOFT_PENALTY_TIME = 5;
-    private static final int SOFT_PENALTY_TRAFFIC = 20;
     private static final int SOFT_PENALTY_LOAD_IMBALANCE = 15;
     private static final int SOFT_PENALTY_HISTORICAL_LOW = 8;
-    private static final int SOFT_PENALTY_AREA_MISMATCH = 25;
     private static final int SOFT_PENALTY_REUSE_CONFLICT = 30;
-    private static final int SOFT_PENALTY_WEATHER = 12;
-    private static final int SOFT_PENALTY_PEAK_HOUR = 18;
-    private static final int SOFT_PENALTY_CUSTOMER_PREF = 10;
+    private static final int SOFT_PENALTY_VEHICLE_MISMATCH = 20;
+    private static final int SOFT_PENALTY_URGENCY = 50;
 
     private final Map<String, Double> skillWeightMap = new HashMap<>();
-    private final Map<String, Double> trafficConditionMap = new HashMap<>();
     private final Map<Long, Integer> resourceLoadMap = new HashMap<>();
-    private Boolean isPeakHour = false;
-    private String weatherCondition = "CLEAR";
-    private final Map<Long, Long> customerPreferredStaff = new HashMap<>();
 
     public SchedulingScoreCalculator() {
         initializeSkillWeights();
-        initializeTrafficConditions();
     }
 
     private void initializeSkillWeights() {
@@ -64,27 +47,8 @@ public class SchedulingScoreCalculator implements EasyScoreCalculator<Scheduling
         skillWeightMap.put("DELIVERY", 1.5);
     }
 
-    private void initializeTrafficConditions() {
-        trafficConditionMap.put("FLUID", 1.0);
-        trafficConditionMap.put("MODERATE", 1.5);
-        trafficConditionMap.put("CONGESTED", 2.5);
-        trafficConditionMap.put("SEVERE", 4.0);
-    }
-
-    public void setPeakHour(Boolean peakHour) {
-        isPeakHour = peakHour;
-    }
-
-    public void setWeatherCondition(String weatherCondition) {
-        this.weatherCondition = weatherCondition;
-    }
-
-    public void setCustomerPreferredStaff(Long customerId, Long staffId) {
-        customerPreferredStaff.put(customerId, staffId);
-    }
-
     @Override
-    public HardSoftScore calculateScore(SchedulingSolution solution) {
+    public HardSoftScore calculateScore(SchedulingProblem solution) {
         int hardScore = 0;
         int softScore = 0;
 
@@ -120,14 +84,7 @@ public class SchedulingScoreCalculator implements EasyScoreCalculator<Scheduling
             penalty += HARD_PENALTY_SKILL_MISMATCH;
         }
 
-        if (order.getLatestStartTime() != null && 
-            LocalDateTime.now().isAfter(order.getLatestStartTime())) {
-            penalty += HARD_PENALTY_TIME_EXCEED;
-        }
-
-        if (resource.getCurrentLoad() != null && 
-            resource.getMaxLoad() != null &&
-            resource.getCurrentLoad() >= resource.getMaxLoad()) {
+        if (!checkCapacityMatch(resource, order)) {
             penalty += HARD_PENALTY_CAPACITY_EXCEED;
         }
 
@@ -150,14 +107,11 @@ public class SchedulingScoreCalculator implements EasyScoreCalculator<Scheduling
         assignment.setEstimatedTravelTime(estimatedTime);
         penalty += (int) (estimatedTime * SOFT_PENALTY_TIME);
 
-        penalty += calculateTrafficPenalty(distance);
         penalty += calculateSkillMatchSoftPenalty(resource, order);
         penalty += calculateHistoricalPenalty(resource);
-        penalty += calculateAreaPenalty(resource, order);
         penalty += calculateReusePenalty(resource, order);
-        penalty += calculateWeatherPenalty();
-        penalty += calculatePeakHourPenalty();
-        penalty += calculateCustomerPreferencePenalty(resource, order);
+        penalty += calculateVehicleMatchPenalty(resource, order);
+        penalty += calculateUrgencyPenalty(order);
 
         resourceLoadMap.compute(resource.getId(), (k, v) -> (v == null ? 0 : v) + 1);
 
@@ -172,6 +126,16 @@ public class SchedulingScoreCalculator implements EasyScoreCalculator<Scheduling
             return false;
         }
         return resource.getSkills().containsAll(order.getRequiredSkills());
+    }
+
+    private boolean checkCapacityMatch(Resource resource, Order order) {
+        if (order.getRequiredCapacity() == null || order.getRequiredCapacity() <= 0) {
+            return true;
+        }
+        if (resource.getVehicleCapacity() == null) {
+            return false;
+        }
+        return resource.getVehicleCapacity() >= order.getRequiredCapacity();
     }
 
     private double calculateDistance(Resource resource, Order order) {
@@ -194,19 +158,6 @@ public class SchedulingScoreCalculator implements EasyScoreCalculator<Scheduling
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
         return EARTH_RADIUS * c;
-    }
-
-    private int calculateTrafficPenalty(double distance) {
-        String trafficLevel = getCurrentTrafficLevel();
-        Double factor = trafficConditionMap.getOrDefault(trafficLevel, 1.0);
-        return (int) (distance * factor * SOFT_PENALTY_TRAFFIC / 10);
-    }
-
-    private String getCurrentTrafficLevel() {
-        if (isPeakHour != null && isPeakHour) {
-            return "CONGESTED";
-        }
-        return "MODERATE";
     }
 
     private int calculateSkillMatchSoftPenalty(Resource resource, Order order) {
@@ -233,17 +184,10 @@ public class SchedulingScoreCalculator implements EasyScoreCalculator<Scheduling
         }
         double score = resource.getHistoricalScore();
         if (score >= 4.5) return 0;
-        if (score >= 4.0) return (int) (SOFT_PENALTY_HISTORICAL_LOW * 1);
-        if (score >= 3.5) return (int) (SOFT_PENALTY_HISTORICAL_LOW * 2);
-        if (score >= 3.0) return (int) (SOFT_PENALTY_HISTORICAL_LOW * 3);
-        return (int) (SOFT_PENALTY_HISTORICAL_LOW * 5);
-    }
-
-    private int calculateAreaPenalty(Resource resource, Order order) {
-        if (resource.getServiceAreas() == null || resource.getServiceAreas().isEmpty()) {
-            return SOFT_PENALTY_AREA_MISMATCH;
-        }
-        return 0;
+        if (score >= 4.0) return SOFT_PENALTY_HISTORICAL_LOW;
+        if (score >= 3.5) return SOFT_PENALTY_HISTORICAL_LOW * 2;
+        if (score >= 3.0) return SOFT_PENALTY_HISTORICAL_LOW * 3;
+        return SOFT_PENALTY_HISTORICAL_LOW * 5;
     }
 
     private int calculateReusePenalty(Resource resource, Order order) {
@@ -256,29 +200,24 @@ public class SchedulingScoreCalculator implements EasyScoreCalculator<Scheduling
         return SOFT_PENALTY_REUSE_CONFLICT;
     }
 
-    private int calculateWeatherPenalty() {
-        return switch (weatherCondition) {
-            case "RAIN" -> (int) (SOFT_PENALTY_WEATHER * 1.5);
-            case "SNOW" -> (int) (SOFT_PENALTY_WEATHER * 2.5);
-            case "STORM" -> (int) (SOFT_PENALTY_WEATHER * 4.0);
-            default -> 0;
-        };
-    }
-
-    private int calculatePeakHourPenalty() {
-        if (isPeakHour != null && isPeakHour) {
-            return SOFT_PENALTY_PEAK_HOUR;
+    private int calculateVehicleMatchPenalty(Resource resource, Order order) {
+        if (order.getRequiredVehicleType() == null || order.getRequiredVehicleType().isEmpty()) {
+            return 0;
+        }
+        if (resource.getVehicleType() == null) {
+            return SOFT_PENALTY_VEHICLE_MISMATCH;
+        }
+        if (!resource.getVehicleType().equals(order.getRequiredVehicleType())) {
+            return SOFT_PENALTY_VEHICLE_MISMATCH;
         }
         return 0;
     }
 
-    private int calculateCustomerPreferencePenalty(Resource resource, Order order) {
-        Long preferredStaffId = customerPreferredStaff.get(order.getCustomerName().hashCode());
-        if (preferredStaffId != null && resource.getStaffId() != null &&
-            !resource.getStaffId().equals(preferredStaffId)) {
-            return SOFT_PENALTY_CUSTOMER_PREF;
+    private int calculateUrgencyPenalty(Order order) {
+        if (order.getUrgencyLevel() == null) {
+            return 0;
         }
-        return 0;
+        return order.getUrgencyLevel() * SOFT_PENALTY_URGENCY;
     }
 
     private int calculateLoadBalancePenalty() {

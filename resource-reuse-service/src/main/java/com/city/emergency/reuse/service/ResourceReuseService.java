@@ -30,11 +30,11 @@ public class ResourceReuseService {
     private static final LocalTime PEAK_EVENING_END = LocalTime.of(19, 0);
     
     private static final List<String> RESCUE_SKILLS = Arrays.asList(
-            "FIRST_AID", "FIRE_FIGHTING", "TOWING", "MEDICAL_TRANSPORT"
+            "FIRST_AID", "FIRE_FIGHTING", "TOWING", "MEDICAL_TRANSPORT", "ROAD_RESCUE"
     );
     
-    private static final List<String> REUSE_COMPATIBLE_SKILLS = Arrays.asList(
-            "MOVING", "CLEANING", "DELIVERY", "MAINTENANCE"
+    private static final List<String> FREIGHT_COMPATIBLE_SKILLS = Arrays.asList(
+            "FREIGHT_SMALL", "FREIGHT_LARGE", "EQUIPMENT_TRANSPORT", "MOVING", "PICKUP"
     );
 
     public ResourceReuseDTO getResourceReuseStatus(Long resourceId) {
@@ -101,7 +101,7 @@ public class ResourceReuseService {
         dto.setCurrentOrderId(orderId);
         dto.setCurrentOrderType(orderType);
         dto.setLastReuseTime(LocalDateTime.now());
-        dto.setStatusMessage("已切换到复用模式，正在执行家政任务");
+        dto.setStatusMessage("已切换到货运模式，正在执行同城货运任务");
         
         if (dto.getTotalReuseCount() == null) {
             dto.setTotalReuseCount(0);

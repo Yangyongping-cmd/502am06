@@ -17,6 +17,7 @@
         <module>service-registry</module>
         <module>location-service</module>
         <module>scheduling-service</module>
+        <module>scheduling-compute-service</module>
         <module>resource-reuse-service</module>
         <module>resource-service</module>
         <module>order-service</module>
