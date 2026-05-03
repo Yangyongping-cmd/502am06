@@ -1,0 +1,118 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 127.0.0.1:8848
+        namespace: emergency-platform
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: emergency-platform
+        file-extension: yaml
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        - id: location-service
+          uri: lb://location-service
+          predicates:
+            - Path=/api/location/**
+          filters:
+            - StripPrefix=2
+            
+        - id: scheduling-service
+          uri: lb://scheduling-service
+          predicates:
+            - Path=/api/scheduling/**
+          filters:
+            - StripPrefix=2
+            
+        - id: resource-reuse-service
+          uri: lb://resource-reuse-service
+          predicates:
+            - Path=/api/reuse/**
+          filters:
+            - StripPrefix=2
+            
+        - id: resource-service
+          uri: lb://resource-service
+          predicates:
+            - Path=/api/resource/**
+          filters:
+            - StripPrefix=2
+            
+        - id: order-service
+          uri: lb://order-service
+          predicates:
+            - Path=/api/order/**
+          filters:
+            - StripPrefix=2
+            
+        - id: staff-service
+          uri: lb://staff-service
+          predicates:
+            - Path=/api/staff/**
+          filters:
+            - StripPrefix=2
+            
+        - id: traffic-service
+          uri: lb://traffic-service
+          predicates:
+            - Path=/api/traffic/**
+          filters:
+            - StripPrefix=2
+            
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notification/**
+          filters:
+            - StripPrefix=2
+            
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins: "*"
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowed-headers: "*"
+            allow-credentials: true
+            max-age: 3600
+
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password: 
+      database: 0
+      timeout: 10000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    com.city.emergency: DEBUG
